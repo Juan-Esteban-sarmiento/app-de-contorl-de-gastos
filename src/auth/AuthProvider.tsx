@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { storageService } from '../services/storageService';
 import { AuthContext, type AuthActionResult, type AuthContextValue } from './authContext';
 
+const authRedirectUrl = () => `${window.location.origin}${import.meta.env.BASE_URL}`;
+
 function translateAuthError(message: string): string {
   const normalized = message.toLowerCase();
 
@@ -80,7 +82,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: authRedirectUrl() },
     });
 
     if (error) return { error: translateAuthError(error.message) };
@@ -107,7 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!supabase) return { error: 'Supabase no está configurado.' };
 
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: window.location.origin,
+      redirectTo: authRedirectUrl(),
     });
 
     if (error) return { error: translateAuthError(error.message) };

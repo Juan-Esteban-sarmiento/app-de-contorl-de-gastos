@@ -144,6 +144,41 @@ El hook [`.githooks/pre-commit`](.githooks/pre-commit) ejecuta `secrets:scan:sta
 
 > Si un secreto ya se subió alguna vez, eliminarlo del archivo no basta: **rótalo** en el proveedor y limpia el historial antes de volver a publicar.
 
+## Despliegue en GitHub Pages y autenticación por correo
+
+URL pública del proyecto:
+
+**https://juan-esteban-sarmiento.github.io/app-de-contorl-de-gastos/**
+
+Para compilar y publicar una actualización en la rama `gh-pages`:
+
+```bash
+VITE_BASE_PATH=/app-de-contorl-de-gastos/ npm run build
+cp dist/index.html dist/404.html
+npx gh-pages -d dist --branch gh-pages
+```
+
+En GitHub, la publicación debe estar configurada en **Settings → Pages → Build and deployment → Deploy from a branch**, rama `gh-pages`, carpeta `/ (root)`.
+
+### Configuración de Supabase Auth
+
+En el panel del proyecto `ewiksyqyylztjzngkfxu`:
+
+1. **Authentication → URL Configuration**
+   - **Site URL:** `https://juan-esteban-sarmiento.github.io/app-de-contorl-de-gastos/`
+   - **Redirect URLs:**
+     - `https://juan-esteban-sarmiento.github.io/app-de-contorl-de-gastos/**`
+     - `http://localhost:5173/**`
+     - `http://127.0.0.1:5173/**`
+2. **Authentication → Providers → Email**
+   - Activa **Email**.
+   - Activa **Confirm email** si quieres verificar el correo antes de permitir el acceso.
+3. **Authentication → Emails / SMTP**
+   - El correo integrado de Supabase solo sirve para pruebas: permite 2 envíos por hora y solo envía a miembros del equipo del proyecto.
+   - Para probar con tu propio correo, añade tu dirección al equipo de la organización o configura un SMTP propio (Resend, Brevo, etc.). Para producción, usa un SMTP propio con dominio verificado.
+
+Los enlaces de confirmación y recuperación usan la URL base del despliegue; tras cambiar el **Site URL** o los **Redirect URLs**, vuelve a solicitar el correo para probar.
+
 ### Autenticación
 
 - Registro e inicio de sesión con correo y contraseña.
