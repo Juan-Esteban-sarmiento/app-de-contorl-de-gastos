@@ -1,0 +1,24 @@
+name: finsmart-secrets
+
+services:
+  openbao:
+    image: openbao/openbao:2.7.1
+    container_name: finsmart-openbao
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:8200:8200"
+    volumes:
+      - ./openbao/config.hcl:/openbao/config/config.hcl:ro
+      - openbao-data:/openbao/file
+    command: server
+    healthcheck:
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  openbao-data:

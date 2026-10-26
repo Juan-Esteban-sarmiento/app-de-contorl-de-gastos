@@ -1,0 +1,59 @@
+title = "FinSmart secrets policy"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "finsmart-supabase-secret-key"
+description = "Supabase secret key (sb_secret_)"
+regex = '''\bsb_secret_[A-Za-z0-9_-]{20,}\b'''
+keywords = ["sb_secret_"]
+tags = ["supabase", "secret"]
+
+[[rules]]
+id = "finsmart-supabase-service-role"
+description = "Supabase legacy JWT with service_role claim"
+regex = '''(?i)["']role["']\s*[:=]\s*["']service_role["']'''
+keywords = ["service_role"]
+tags = ["supabase", "jwt"]
+
+[[rules]]
+id = "finsmart-supabase-access-token"
+description = "Supabase personal access token"
+regex = '''\bsbp_[A-Za-z0-9]{20,}\b'''
+keywords = ["sbp_"]
+tags = ["supabase", "token"]
+
+[[rules]]
+id = "finsmart-openbao-token"
+description = "OpenBao or Vault service, batch or recovery token"
+regex = '''\b(?:hvs|hvb)\.[A-Za-z0-9_-]{20,}\b|\b[sbr]\.[A-Za-z0-9]{24,}\b'''
+keywords = ["hvs.", "hvb.", "s.", "b.", "r."]
+tags = ["openbao", "token"]
+
+[[rules]]
+id = "finsmart-gemini-api-key"
+description = "Google AI Studio or Gemini API key"
+regex = '''\bAIza[0-9A-Za-z_-]{35}\b'''
+keywords = ["AIza"]
+tags = ["google", "gemini"]
+
+[allowlist]
+description = "Placeholders, generated files and local tooling"
+paths = [
+    '''(?:^|/)\.opencode/skills(?:/.*)?$''',
+    '''(?:^|/)\.opencode/node_modules(?:/.*)?$''',
+    '''(?:^|/)\.opencode/package-lock\.json$''',
+    '''(?:^|/)\.tools(?:/.*)?$''',
+    '''(?:^|/)\.openbao(?:/.*)?$''',
+    '''(?:^|/)node_modules(?:/.*)?$''',
+    '''(?:^|/)dist(?:/.*)?$''',
+    '''(?:^|/)coverage(?:/.*)?$''',
+    '''(?:^|/)package-lock\.json$''',
+]
+regexes = [
+    '''(?i)^(?:tu|your|example|sample|placeholder|changeme|change-me|dummy|test|fake)[-_].*$''',
+    '''(?i)^<.*>$''',
+    '''^sb_publishable_[A-Za-z0-9_-]+$''',
+    '''^\$\{\{.*\}\}$''',
+]

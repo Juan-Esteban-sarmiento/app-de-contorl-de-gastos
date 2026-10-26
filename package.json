@@ -1,0 +1,44 @@
+{
+  "name": "proyectos",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "secrets:up": "node scripts/secrets/openbao.mjs up",
+    "secrets:down": "node scripts/secrets/openbao.mjs down",
+    "secrets:status": "node scripts/secrets/openbao.mjs status",
+    "secrets:init": "node scripts/secrets/openbao.mjs init",
+    "secrets:push": "node scripts/secrets/openbao.mjs push",
+    "secrets:pull": "node scripts/secrets/openbao.mjs pull",
+    "secrets:list": "node scripts/secrets/openbao.mjs list",
+    "secrets:diff": "node scripts/secrets/openbao.mjs diff",
+    "secrets:set": "node scripts/secrets/openbao.mjs set",
+    "secrets:doctor": "node scripts/secrets/openbao.mjs doctor",
+    "secrets:scan": "node scripts/secrets/scan.mjs",
+    "secrets:scan:dir": "node scripts/secrets/scan.mjs dir",
+    "secrets:scan:history": "node scripts/secrets/scan.mjs history",
+    "secrets:scan:staged": "node scripts/secrets/scan.mjs staged",
+    "secrets:install-hooks": "node scripts/secrets/install-hooks.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "canvas-confetti": "^1.9.4",
+    "lucide-react": "^1.57.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}
