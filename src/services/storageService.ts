@@ -9,7 +9,15 @@ const STORAGE_KEYS = {
 };
 
 const EMPTY_SALARY_PROFILE: SalaryProfile = {
+  contractType: 'indefinido',
+  payMode: 'mensual',
   monthlySalary: 0,
+  dailyRate: 0,
+  hourlyRate: 0,
+  workDaysPerWeek: 5,
+  paymentWeekday: 5,
+  defaultShift: 'diurno',
+  hoursPerShift: 8,
   paymentPeriod: 'mensual',
   paymentDayOfMonth: 28,
   workDaysPerMonthTarget: 22,
@@ -34,7 +42,7 @@ export const storageService = {
     if (!data) return { ...EMPTY_SALARY_PROFILE };
 
     try {
-      return { ...JSON.parse(data), currency: 'COP' };
+      return { ...EMPTY_SALARY_PROFILE, ...JSON.parse(data), currency: 'COP' };
     } catch {
       return { ...EMPTY_SALARY_PROFILE };
     }

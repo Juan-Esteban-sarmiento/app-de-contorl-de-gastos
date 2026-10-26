@@ -9,6 +9,15 @@ import { executeToolCall, GEMINI_FUNCTION_DECLARATIONS } from './aiTools';
 import { LocalTopic, parseLocalToolCalls } from './aiLocalParser';
 import { extractDates, normalize } from './aiNlu';
 import { formatCOP } from '../utils/money';
+import {
+  CONTRACT_TYPE_LABELS,
+  PAY_MODE_LABELS,
+  getDailyEarningReference,
+  getMonthlyIncome,
+  getPaymentDescription,
+  getShiftLabel,
+  getWorkDayEarnings,
+} from '../utils/contract';
 
 const API_KEY_STORAGE = 'finsmart_gemini_api_key';
 const HISTORY_KEY = 'finsmart_ai_chat';
@@ -81,14 +90,9 @@ function monthWorkDays(ctx: AiFinanceContext) {
   const extra = records.filter((day) => day.type === 'extra').length;
   const medio = records.filter((day) => day.type === 'medio_dia').length;
   const descanso = records.filter((day) => day.type === 'descanso').length;
-  const dailyRate = ctx.salary.workDaysPerMonthTarget > 0
-    ? ctx.salary.monthlySalary / ctx.salary.workDaysPerMonthTarget
-    : 0;
+  const dailyRate = getDailyEarningReference(ctx.salary);
   const earnings = records.reduce((total, day) => {
-    if (day.dailyEarnings !== undefined) return total + day.dailyEarnings;
-    if (day.type === 'laboral' || day.type === 'extra') return total + dailyRate;
-    if (day.type === 'medio_dia') return total + dailyRate / 2;
-    return total;
+    return total + (day.dailyEarnings ?? getWorkDayEarnings(ctx.salary, day.type, day.hoursWorked ?? ctx.salary.hoursPerShift));
   }, 0);
   return { records, laboral, extra, medio, descanso, earnings, dailyRate };
 }
@@ -101,9 +105,9 @@ function snapshotText(ctx: AiFinanceContext): string {
   const report = ctx.strategyReport;
   return [
     `Hoy: ${ctx.today}. Moneda: ${s.currency}. Tema: ${ctx.isDarkMode ? 'oscuro' : 'claro'}.`,
-    `Salario mensual: ${formatCOP(s.monthlySalary)} (${s.paymentPeriod}). Balance: ${formatCOP(s.currentBalance)}. Cobro día ${s.paymentDayOfMonth}. Meta ${s.workDaysPerMonthTarget} días laborales; tarifa diaria ${formatCOP(work.dailyRate)}.`,
-    `Jornadas del mes: ${work.laboral} laborales, ${work.extra} extra, ${work.medio} medio día, ${work.descanso} descanso. Ingreso estimado por jornadas: ${formatCOP(work.earnings)}.`,
-    ...work.records.slice(-12).map((day) => `- ${day.date} ${day.type}${day.hoursWorked ? ` ${day.hoursWorked}h` : ''}${day.notes ? ` (${day.notes})` : ''}`),
+    `Contrato: ${CONTRACT_TYPE_LABELS[s.contractType]} · ${PAY_MODE_LABELS[s.payMode]} · ${getPaymentDescription(s)}. Ingreso mensual estimado: ${formatCOP(getMonthlyIncome(s))}. Balance: ${formatCOP(s.currentBalance)}. Turno habitual: ${getShiftLabel(s.defaultShift)} · ${s.hoursPerShift} h.`,
+    `Jornadas del mes: ${work.laboral} laborales, ${work.extra} extra, ${work.medio} medio día, ${work.descanso} descanso. Tarifa de referencia: ${formatCOP(work.dailyRate)}. Ingreso estimado por jornadas: ${formatCOP(work.earnings)}.`,
+    ...work.records.slice(-12).map((day) => `- ${day.date} ${day.type} · ${getShiftLabel(day.shift, s.defaultShift)}${day.hoursWorked ? ` ${day.hoursWorked}h` : ''}${day.notes ? ` (${day.notes})` : ''}`),
     `Estrategia activa: ${ctx.strategyMode}. Salud financiera: ${report.healthScore.score}/100 (${report.healthScore.label}).`,
     `Deudas activas (${activeDebts.length}), total ${formatCOP(report.totalDebt)}, cuotas mínimas ${formatCOP(report.totalMonthlyMinPayments)}:`,
     ...activeDebts.map(
@@ -157,11 +161,10 @@ function shortDate(value: string): string {
 function salaryReply(ctx: AiFinanceContext): string {
   const s = ctx.salary;
   const work = monthWorkDays(ctx);
-  const period = s.paymentPeriod === 'quincenal' ? 'quincenal' : s.paymentPeriod === 'semanal' ? 'semanal' : 'mensual';
   return [
-    `Tu nómina es **${formatCOP(s.monthlySalary)}** ${period}. Cobras el día **${s.paymentDayOfMonth}**.`,
-    `Balance disponible: **${formatCOP(s.currentBalance)}**.`,
-    `Con meta de ${s.workDaysPerMonthTarget} días, tu tarifa diaria es **${formatCOP(work.dailyRate)}**.`,
+    `Tu contrato es **${CONTRACT_TYPE_LABELS[s.contractType]}** y se paga **${PAY_MODE_LABELS[s.payMode].toLowerCase()}** (${getPaymentDescription(s)}).`,
+    `Ingreso mensual estimado: **${formatCOP(getMonthlyIncome(s))}**. Balance disponible: **${formatCOP(s.currentBalance)}**.`,
+    `Tu tarifa de referencia por jornada es **${formatCOP(work.dailyRate)}**, con turno ${getShiftLabel(s.defaultShift).toLowerCase()} de ${s.hoursPerShift} h.`,
     `En ${monthName(ctx)} llevas ${work.laboral} ${work.laboral === 1 ? 'día laboral' : 'días laborales'} y ${work.extra} extra, con un ingreso estimado de ${formatCOP(work.earnings)}.`,
   ].join('\n');
 }
@@ -169,7 +172,10 @@ function salaryReply(ctx: AiFinanceContext): string {
 function workDaysReply(ctx: AiFinanceContext): string {
   const work = monthWorkDays(ctx);
   if (!work.records.length) {
-    return `Aún no has marcado jornadas en ${monthName(ctx)}. Tu meta es ${ctx.salary.workDaysPerMonthTarget} días laborales.`;
+    const target = ctx.salary.contractType === 'obra_labor'
+      ? `${ctx.salary.workDaysPerWeek} días por semana`
+      : `${ctx.salary.workDaysPerMonthTarget} días laborales`;
+    return `Aún no has marcado jornadas en ${monthName(ctx)}. Tu meta es ${target}.`;
   }
   const recent = [...work.records]
     .slice(-6)
@@ -178,7 +184,7 @@ function workDaysReply(ctx: AiFinanceContext): string {
     .join('\n');
   return [
     `En ${monthName(ctx)} llevas **${work.laboral} ${work.laboral === 1 ? 'día laboral' : 'días laborales'}**, ${work.extra} extra, ${work.medio} medio día y ${work.descanso} descanso.`,
-    `Meta: ${ctx.salary.workDaysPerMonthTarget} días. Ingreso estimado por jornadas: **${formatCOP(work.earnings)}**.`,
+    `Meta: ${ctx.salary.contractType === 'obra_labor' ? `${ctx.salary.workDaysPerWeek} días por semana` : `${ctx.salary.workDaysPerMonthTarget} días laborales`}. Ingreso estimado por jornadas: **${formatCOP(work.earnings)}**.`,
     `Últimos registros:\n${recent}`,
   ].join('\n');
 }
@@ -214,7 +220,7 @@ function expensesReply(ctx: AiFinanceContext, dates: string[] = []): string {
   const lead = dates.length ? `Para ${when}` : `En ${monthName(ctx)}`;
   return [
     `${lead} tienes ${scoped.length} ${scoped.length === 1 ? 'gasto' : 'gastos'} por **${formatCOP(total)}**.`,
-    `Gastos hormiga: **${formatCOP(ant)}** (${ctx.salary.monthlySalary > 0 ? ((ant / ctx.salary.monthlySalary) * 100).toFixed(1) : '0'}% de tu nómina).`,
+    `Gastos hormiga: **${formatCOP(ant)}** (${getMonthlyIncome(ctx.salary) > 0 ? ((ant / getMonthlyIncome(ctx.salary)) * 100).toFixed(1) : '0'}% de tu ingreso mensual).`,
     top ? `Top categorías:\n${top}` : '',
     `Movimientos:\n${recent}`,
   ].filter(Boolean).join('\n\n');

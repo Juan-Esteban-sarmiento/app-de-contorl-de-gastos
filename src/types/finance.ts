@@ -2,8 +2,20 @@ export type CurrencyCode = 'COP';
 
 export type CloudSyncStatus = 'loading' | 'saving' | 'synced' | 'error';
 
+export type ContractType = 'indefinido' | 'obra_labor';
+export type PayMode = 'mensual' | 'dia' | 'hora';
+export type WorkShift = 'diurno' | 'nocturno' | 'mixto';
+
 export interface SalaryProfile {
+  contractType: ContractType;
+  payMode: PayMode;
   monthlySalary: number;
+  dailyRate: number;
+  hourlyRate: number;
+  workDaysPerWeek: number;
+  paymentWeekday: number; // 1 = lunes, 7 = domingo
+  defaultShift: WorkShift;
+  hoursPerShift: number;
   paymentPeriod: 'mensual' | 'quincenal' | 'semanal';
   paymentDayOfMonth: number; // Ej. día 15 o 30
   workDaysPerMonthTarget: number; // Ej. 20 o 22 días estándar
@@ -16,6 +28,7 @@ export type WorkDayType = 'laboral' | 'extra' | 'medio_dia' | 'descanso';
 export interface WorkDayRecord {
   date: string; // YYYY-MM-DD
   type: WorkDayType;
+  shift?: WorkShift;
   hoursWorked?: number;
   notes?: string;
   dailyEarnings?: number; // Calculado en base al salario o tarifa

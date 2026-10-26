@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { CheckCircle2, CloudOff, Loader2 } from 'lucide-react';
-import { CloudSyncStatus, CurrencyCode, DebtRecord, ExpenseRecord, SalaryProfile, StrategyMethod, WorkDayRecord, WorkDayType } from './types/finance';
+import { CloudSyncStatus, CurrencyCode, DebtRecord, ExpenseRecord, SalaryProfile, StrategyMethod, WorkDayRecord, WorkDayType, WorkShift } from './types/finance';
 import { AiAppActions, AiFinanceContext } from './types/ai';
 import { storageService } from './services/storageService';
 import { strategyEngine } from './services/strategyEngine';
@@ -9,9 +9,11 @@ import { FinanceSnapshot, loadFinanceState, saveFinanceState } from './services/
 import { formatCOP } from './utils/money';
 import { createId } from './utils/id';
 import { daysUntil, getToday, parseLocalDate, startOfDay, toIsoDate } from './utils/date';
+import { getWorkDayEarnings } from './utils/contract';
 import { TopNav } from './components/TopNav';
 import { BottomTabs, TabType } from './components/BottomTabs';
 import { HeroBalanceCard } from './components/HeroBalanceCard';
+import { ObraLaborDashboard } from './components/ObraLaborDashboard';
 import { DebtUrgencyAlert } from './components/DebtUrgencyAlert';
 import { WorkDaysWidget } from './components/WorkDaysWidget';
 import { AntExpensesWidget } from './components/AntExpensesWidget';
@@ -247,28 +249,39 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName,
 
   const handleToggleWorkDay = (dateStr: string, currentType?: WorkDayType) => {
     let nextType: WorkDayType = 'laboral';
-    if (currentType === 'laboral') nextType = 'descanso';
+    if (currentType === 'laboral' || currentType === 'medio_dia') nextType = 'descanso';
     else if (currentType === 'descanso') nextType = 'extra';
     else if (currentType === 'extra') nextType = 'descanso';
 
     const existingIndex = workDays.findIndex(w => w.date === dateStr);
-    let updated: WorkDayRecord[];
-    const dailyEarnings = salary.monthlySalary / salary.workDaysPerMonthTarget;
 
     if (existingIndex >= 0) {
-      updated = [...workDays];
+      const updated = [...workDays];
+      const existingHours = updated[existingIndex].hoursWorked ?? 0;
+      const nextHours = nextType === 'descanso'
+        ? 0
+        : existingHours > 0
+          ? existingHours
+          : salary.hoursPerShift;
       updated[existingIndex] = {
         ...updated[existingIndex],
         type: nextType,
-        dailyEarnings: nextType === 'descanso' ? 0 : dailyEarnings,
+        hoursWorked: nextHours,
+        dailyEarnings: getWorkDayEarnings(salary, nextType, nextHours),
       };
+      setWorkDays(updated);
     } else {
-      updated = [
+      setWorkDays([
         ...workDays,
-        { date: dateStr, type: nextType, dailyEarnings: nextType === 'descanso' ? 0 : dailyEarnings }
-      ];
+        {
+          date: dateStr,
+          type: nextType,
+          shift: salary.defaultShift,
+          hoursWorked: nextType === 'descanso' ? 0 : salary.hoursPerShift,
+          dailyEarnings: getWorkDayEarnings(salary, nextType, salary.hoursPerShift),
+        }
+      ]);
     }
-    setWorkDays(updated);
     showToast(`Jornada actualizada · ${dateStr}`);
   };
 
@@ -378,17 +391,24 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName,
   };
 
   const handleSaveSalary = (updated: Partial<SalaryProfile>) => {
-    setSalary(prev => ({ ...prev, ...updated }));
-    showToast('Perfil salarial actualizado.');
+    const nextSalary = { ...salary, ...updated };
+    setSalary(nextSalary);
+    setWorkDays(prev => prev.map(day => ({
+      ...day,
+      shift: day.shift ?? nextSalary.defaultShift,
+      dailyEarnings: getWorkDayEarnings(
+        nextSalary,
+        day.type,
+        day.hoursWorked ?? nextSalary.hoursPerShift
+      ),
+    })));
+    showToast('Contrato y jornada actualizados.');
   };
 
   const handleOnboardingComplete = async (data: OnboardingData) => {
     const nextSalary: SalaryProfile = {
-      monthlySalary: data.monthlySalary,
-      paymentPeriod: 'mensual',
-      paymentDayOfMonth: data.paymentDayOfMonth,
-      workDaysPerMonthTarget: data.workDaysPerMonthTarget,
-      currentBalance: data.currentBalance,
+      ...salary,
+      ...data,
       currency: 'COP',
     };
     const nextSnapshot: FinanceSnapshot = {
@@ -420,20 +440,18 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName,
   const handleSetWorkDay = (
     dateStr: string,
     nextType: WorkDayType,
-    details?: { hoursWorked?: number; notes?: string; dailyEarnings?: number }
+    details?: { hoursWorked?: number; notes?: string; dailyEarnings?: number; shift?: WorkShift }
   ) => {
-    const target = salary.workDaysPerMonthTarget || 1;
-    const baseEarnings = salary.monthlySalary / target;
-    const dailyEarnings = nextType === 'descanso'
-      ? 0
-      : nextType === 'medio_dia'
-        ? baseEarnings / 2
-        : baseEarnings;
+    const requestedHours = details?.hoursWorked ?? salary.hoursPerShift;
+    const hoursWorked = nextType === 'descanso' ? 0 : Math.max(0.5, requestedHours);
+    const dailyEarnings = details?.dailyEarnings
+      ?? getWorkDayEarnings(salary, nextType, hoursWorked);
     const record: WorkDayRecord = {
       date: dateStr,
       type: nextType,
-      dailyEarnings: details?.dailyEarnings ?? dailyEarnings,
-      hoursWorked: details?.hoursWorked ?? (nextType === 'descanso' ? 0 : nextType === 'medio_dia' ? 4 : 8),
+      shift: details?.shift ?? salary.defaultShift,
+      dailyEarnings,
+      hoursWorked,
       notes: details?.notes,
     };
     setWorkDays(prev => {
@@ -529,6 +547,9 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName,
   const kicker = activeTab === 'dashboard'
     ? `${pageMeta.kicker} / ${dateLabel.toUpperCase()}`
     : pageMeta.kicker;
+  const pageSubtitle = activeTab === 'dashboard' && salary.contractType === 'obra_labor'
+    ? 'Tu ciclo semanal, jornadas y pago por obra o labor.'
+    : pageMeta.subtitle;
 
   return (
     <div className="app-shell">
@@ -558,7 +579,7 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName,
           <div>
             <p className="vt-kicker">{kicker}</p>
             <h1>{pageMeta.title}</h1>
-            <p className="vt-page-sub">{pageMeta.subtitle}</p>
+            <p className="vt-page-sub">{pageSubtitle}</p>
           </div>
           <div className="vt-page-status">
             <span className="vt-live"><i /> {cloudStatus === 'saving' ? 'Guardando cambios' : cloudStatus === 'error' ? 'Pendiente de sincronizar' : 'Todo sincronizado'}</span>
@@ -586,25 +607,40 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName,
               workDays={workDays}
               expenses={expenses}
               onToggleWorkDay={handleToggleWorkDay}
+              onSetWorkDay={handleSetWorkDay}
               onOpenAddExpenseForDate={handleOpenAddExpenseForDate}
             />
           )}
 
           {activeTab === 'dashboard' && (
             <>
-              <HeroBalanceCard
-                salary={salary}
-                report={strategyReport}
-                debts={debts}
-                expenses={expenses}
-                workedDaysCount={workedDaysCount}
-                totalExpensesMonth={totalExpensesMonth}
-                totalDebtAmount={totalDebtAmount}
-                onOpenExpenseModal={() => { setPrefilledDateForExpense(undefined); setIsExpenseModalOpen(true); }}
-                onOpenDebtModal={() => setIsDebtModalOpen(true)}
-                onGoToStrategy={() => changeTab('strategies')}
-                onGoToDebts={() => changeTab('debts')}
-              />
+              {salary.contractType === 'obra_labor' ? (
+                <ObraLaborDashboard
+                  salary={salary}
+                  report={strategyReport}
+                  debts={debts}
+                  expenses={expenses}
+                  workDays={workDays}
+                  onOpenExpenseModal={() => { setPrefilledDateForExpense(undefined); setIsExpenseModalOpen(true); }}
+                  onGoToCalendar={() => changeTab('calendar')}
+                  onGoToStrategy={() => changeTab('strategies')}
+                  onGoToDebts={() => changeTab('debts')}
+                />
+              ) : (
+                <HeroBalanceCard
+                  salary={salary}
+                  report={strategyReport}
+                  debts={debts}
+                  expenses={expenses}
+                  workedDaysCount={workedDaysCount}
+                  totalExpensesMonth={totalExpensesMonth}
+                  totalDebtAmount={totalDebtAmount}
+                  onOpenExpenseModal={() => { setPrefilledDateForExpense(undefined); setIsExpenseModalOpen(true); }}
+                  onOpenDebtModal={() => setIsDebtModalOpen(true)}
+                  onGoToStrategy={() => changeTab('strategies')}
+                  onGoToDebts={() => changeTab('debts')}
+                />
+              )}
               <DebtUrgencyAlert
                 debts={debts}
                 onPayDebt={handlePayInstallment}

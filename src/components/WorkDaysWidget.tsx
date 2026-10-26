@@ -9,15 +9,28 @@ import {
   Receipt,
   RotateCcw,
 } from 'lucide-react';
-import { ExpenseRecord, SalaryProfile, WorkDayRecord, WorkDayType } from '../types/finance';
+import { ExpenseRecord, SalaryProfile, WorkDayRecord, WorkDayType, WorkShift } from '../types/finance';
 import { formatCOP } from '../utils/money';
 import { getToday, parseLocalDate, toIsoDate } from '../utils/date';
+import {
+  SHIFT_LABELS,
+  getDailyEarningReference,
+  getShiftLabel,
+  getWorkDayEarnings,
+  getWorkDayRate,
+  getWorkDayRateLabel,
+} from '../utils/contract';
 
 interface Props {
   salary: SalaryProfile;
   workDays: WorkDayRecord[];
   expenses: ExpenseRecord[];
   onToggleWorkDay: (dateStr: string, currentType?: WorkDayType) => void;
+  onSetWorkDay: (
+    dateStr: string,
+    nextType: WorkDayType,
+    details?: { hoursWorked?: number; notes?: string; dailyEarnings?: number; shift?: WorkShift }
+  ) => void;
   onOpenAddExpenseForDate?: (dateStr: string) => void;
 }
 
@@ -26,6 +39,7 @@ export const WorkDaysWidget: React.FC<Props> = ({
   workDays,
   expenses,
   onToggleWorkDay,
+  onSetWorkDay,
   onOpenAddExpenseForDate,
 }) => {
   const [today] = useState(() => getToday());
@@ -71,11 +85,15 @@ export const WorkDaysWidget: React.FC<Props> = ({
     expensesByDateMap.set(expense.date, existing);
   });
 
-  const dailyRate = salary.monthlySalary / (salary.workDaysPerMonthTarget || 22);
+  const dailyRate = getDailyEarningReference(salary);
   const activeWorkRecord = workDayMap.get(selectedDayStr);
-  const isSelectedDayWorked = activeWorkRecord?.type === 'laboral' || activeWorkRecord?.type === 'extra';
+  const isSelectedDayWorked = activeWorkRecord?.type === 'laboral' || activeWorkRecord?.type === 'extra' || activeWorkRecord?.type === 'medio_dia';
   const activeExpenses = expensesByDateMap.get(selectedDayStr);
-  const selectedEarnings = isSelectedDayWorked ? (activeWorkRecord?.dailyEarnings || dailyRate) : 0;
+  const selectedHours = activeWorkRecord?.hoursWorked ?? salary.hoursPerShift;
+  const selectedShift = activeWorkRecord?.shift ?? salary.defaultShift;
+  const selectedEarnings = activeWorkRecord
+    ? activeWorkRecord.dailyEarnings ?? getWorkDayEarnings(salary, activeWorkRecord.type, selectedHours)
+    : 0;
   const selectedSpend = activeExpenses?.total || 0;
   const selectedBalance = selectedEarnings - selectedSpend;
 
@@ -157,7 +175,7 @@ export const WorkDaysWidget: React.FC<Props> = ({
                 </span>
                 <span className="vt-day-foot">
                   {isWorkDay ? (
-                    <span className="vt-day-value pos">+{money(workRecord?.dailyEarnings || dailyRate, 0)}</span>
+                    <span className="vt-day-value pos">+{money(workRecord?.dailyEarnings ?? dailyRate, 0)}</span>
                   ) : (
                     <span className="vt-day-value muted">—</span>
                   )}
@@ -198,13 +216,74 @@ export const WorkDaysWidget: React.FC<Props> = ({
           </div>
           <div className="vt-day-row">
             <span>Horas</span>
-            <strong>{isSelectedDayWorked ? `${activeWorkRecord?.hoursWorked || 8} h` : '0 h'}</strong>
+            <strong>{isSelectedDayWorked ? `${selectedHours} h` : '0 h'}</strong>
+          </div>
+          <div className="vt-day-row">
+            <span>Turno</span>
+            <strong>{isSelectedDayWorked ? getShiftLabel(activeWorkRecord?.shift, salary.defaultShift) : '—'}</strong>
           </div>
           <div className="vt-day-row">
             <span>Jornada</span>
             <strong className="vt-capitalize">{activeWorkRecord?.type?.replace('_', ' ') || 'Sin registrar'}</strong>
           </div>
         </div>
+
+        {isSelectedDayWorked && activeWorkRecord && (
+          <div className="vt-day-editor">
+            <div className="vt-day-section-head">
+              <h3><Clock3 size={13} /> Turno y horas</h3>
+              <span>{getWorkDayRateLabel(salary)} {money(getWorkDayRate(salary), 0)}</span>
+            </div>
+            <div className="form-grid">
+              <label className="field">
+                <span className="field-label">Turno</span>
+                <select
+                  className="input-field"
+                  value={selectedShift}
+                  onChange={(event) => onSetWorkDay(selectedDayStr, activeWorkRecord.type, {
+                    shift: event.target.value as WorkShift,
+                    hoursWorked: selectedHours,
+                  })}
+                >
+                  {(Object.keys(SHIFT_LABELS) as WorkShift[]).map((shift) => (
+                    <option key={shift} value={shift}>{SHIFT_LABELS[shift]}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="field-label">Horas trabajadas</span>
+                <input
+                  type="number"
+                  className="input-field"
+                  min="0.5"
+                  max="24"
+                  step="0.5"
+                  value={selectedHours}
+                  onChange={(event) => onSetWorkDay(selectedDayStr, activeWorkRecord.type, {
+                    shift: selectedShift,
+                    hoursWorked: Number(event.target.value) || 0,
+                  })}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Tipo de jornada</span>
+                <select
+                  className="input-field"
+                  value={activeWorkRecord.type}
+                  onChange={(event) => onSetWorkDay(selectedDayStr, event.target.value as WorkDayType, {
+                    shift: selectedShift,
+                    hoursWorked: selectedHours,
+                  })}
+                >
+                  <option value="laboral">Laboral</option>
+                  <option value="extra">Extra</option>
+                  <option value="medio_dia">Medio día</option>
+                  <option value="descanso">Descanso</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        )}
 
         <div className="vt-day-section">
           <div className="vt-day-section-head">
@@ -248,7 +327,7 @@ export const WorkDaysWidget: React.FC<Props> = ({
           </button>
           {isSelectedDayWorked && (
             <span className="vt-cal-note">
-              <Clock3 size={12} /> Tarifa diaria {money(dailyRate, 0)}
+              <Clock3 size={12} /> {getWorkDayRateLabel(salary)} {money(getWorkDayRate(salary), 0)}
             </span>
           )}
         </div>

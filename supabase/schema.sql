@@ -9,6 +9,20 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.finance_settings (
   user_id uuid primary key references auth.users (id) on delete cascade,
+  contract_type text not null default 'indefinido'
+    check (contract_type in ('indefinido', 'obra_labor')),
+  pay_mode text not null default 'mensual'
+    check (pay_mode in ('mensual', 'dia', 'hora')),
+  daily_rate numeric(14, 2) not null default 0 check (daily_rate >= 0),
+  hourly_rate numeric(14, 2) not null default 0 check (hourly_rate >= 0),
+  work_days_per_week integer not null default 5
+    check (work_days_per_week between 1 and 7),
+  payment_weekday integer not null default 5
+    check (payment_weekday between 1 and 7),
+  default_shift text not null default 'diurno'
+    check (default_shift in ('diurno', 'nocturno', 'mixto')),
+  hours_per_shift numeric(4, 1) not null default 8
+    check (hours_per_shift between 0.5 and 24),
   monthly_salary numeric(14, 2) not null default 0 check (monthly_salary >= 0),
   payment_period text not null default 'mensual'
     check (payment_period in ('mensual', 'quincenal', 'semanal')),
@@ -62,6 +76,8 @@ create table if not exists public.work_days (
   date date not null,
   type text not null
     check (type in ('laboral', 'extra', 'medio_dia', 'descanso')),
+  shift text not null default 'diurno'
+    check (shift in ('diurno', 'nocturno', 'mixto')),
   hours_worked numeric(5, 2),
   daily_earnings numeric(14, 2),
   notes text,
@@ -69,6 +85,28 @@ create table if not exists public.work_days (
   updated_at timestamptz not null default now(),
   primary key (user_id, date)
 );
+
+alter table public.finance_settings
+  add column if not exists contract_type text not null default 'indefinido'
+    check (contract_type in ('indefinido', 'obra_labor')),
+  add column if not exists pay_mode text not null default 'mensual'
+    check (pay_mode in ('mensual', 'dia', 'hora')),
+  add column if not exists daily_rate numeric(14, 2) not null default 0
+    check (daily_rate >= 0),
+  add column if not exists hourly_rate numeric(14, 2) not null default 0
+    check (hourly_rate >= 0),
+  add column if not exists work_days_per_week integer not null default 5
+    check (work_days_per_week between 1 and 7),
+  add column if not exists payment_weekday integer not null default 5
+    check (payment_weekday between 1 and 7),
+  add column if not exists default_shift text not null default 'diurno'
+    check (default_shift in ('diurno', 'nocturno', 'mixto')),
+  add column if not exists hours_per_shift numeric(4, 1) not null default 8
+    check (hours_per_shift between 0.5 and 24);
+
+alter table public.work_days
+  add column if not exists shift text not null default 'diurno'
+    check (shift in ('diurno', 'nocturno', 'mixto'));
 
 create index if not exists expenses_user_date_idx
   on public.expenses (user_id, date desc);
@@ -172,6 +210,14 @@ begin
 
   insert into public.finance_settings (
     user_id,
+    contract_type,
+    pay_mode,
+    daily_rate,
+    hourly_rate,
+    work_days_per_week,
+    payment_weekday,
+    default_shift,
+    hours_per_shift,
     monthly_salary,
     payment_period,
     payment_day_of_month,
@@ -182,6 +228,23 @@ begin
   )
   values (
     v_user_id,
+    case
+      when p_salary ->> 'contract_type' = 'obra_labor' then 'obra_labor'
+      else 'indefinido'
+    end,
+    case
+      when p_salary ->> 'pay_mode' in ('dia', 'hora') then p_salary ->> 'pay_mode'
+      else 'mensual'
+    end,
+    coalesce((p_salary ->> 'daily_rate')::numeric, 0),
+    coalesce((p_salary ->> 'hourly_rate')::numeric, 0),
+    greatest(1, least(7, coalesce((p_salary ->> 'work_days_per_week')::integer, 5))),
+    greatest(1, least(7, coalesce((p_salary ->> 'payment_weekday')::integer, 5))),
+    case
+      when p_salary ->> 'default_shift' in ('nocturno', 'mixto') then p_salary ->> 'default_shift'
+      else 'diurno'
+    end,
+    greatest(0.5, least(24, coalesce((p_salary ->> 'hours_per_shift')::numeric, 8))),
     coalesce((p_salary ->> 'monthly_salary')::numeric, 0),
     coalesce(p_salary ->> 'payment_period', 'mensual'),
     greatest(1, least(31, coalesce((p_salary ->> 'payment_day_of_month')::integer, 28))),
@@ -194,6 +257,14 @@ begin
     end
   )
   on conflict (user_id) do update set
+    contract_type = excluded.contract_type,
+    pay_mode = excluded.pay_mode,
+    daily_rate = excluded.daily_rate,
+    hourly_rate = excluded.hourly_rate,
+    work_days_per_week = excluded.work_days_per_week,
+    payment_weekday = excluded.payment_weekday,
+    default_shift = excluded.default_shift,
+    hours_per_shift = excluded.hours_per_shift,
     monthly_salary = excluded.monthly_salary,
     payment_period = excluded.payment_period,
     payment_day_of_month = excluded.payment_day_of_month,
@@ -286,19 +357,21 @@ begin
     );
 
   insert into public.work_days (
-    user_id, date, type, hours_worked, daily_earnings, notes
+    user_id, date, type, shift, hours_worked, daily_earnings, notes
   )
   select
-    v_user_id, x.date, x.type, x.hours_worked, x.daily_earnings, x.notes
+    v_user_id, x.date, x.type, coalesce(x.shift, 'diurno'), x.hours_worked, x.daily_earnings, x.notes
   from jsonb_to_recordset(coalesce(p_work_days, '[]'::jsonb)) as x(
     date date,
     type text,
+    shift text,
     hours_worked numeric,
     daily_earnings numeric,
     notes text
   )
   on conflict (user_id, date) do update set
     type = excluded.type,
+    shift = excluded.shift,
     hours_worked = excluded.hours_worked,
     daily_earnings = excluded.daily_earnings,
     notes = excluded.notes,

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { DebtRecord, SalaryProfile } from '../types/finance';
 import { formatCOP } from '../utils/money';
+import { getMonthlyIncome } from '../utils/contract';
 import { daysUntil } from '../utils/date';
 
 interface Props {
@@ -58,7 +59,7 @@ export const DebtListView: React.FC<Props> = ({
         <div className="vt-summary">
           <span>Compromiso mensual</span>
           <strong>{money(totalMonthlyCommitment)}</strong>
-          <small>{Math.round((totalMonthlyCommitment / salary.monthlySalary) * 100)}% de tu nómina</small>
+          <small>{Math.round((totalMonthlyCommitment / (getMonthlyIncome(salary) || 1)) * 100)}% de tu nómina</small>
         </div>
         <div className="vt-summary">
           <span>Progreso</span>

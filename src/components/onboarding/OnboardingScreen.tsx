@@ -1,22 +1,17 @@
 import React, { useState } from 'react';
 import {
   ArrowRight,
-  BriefcaseBusiness,
-  CalendarDays,
   Loader2,
   LogOut,
   ShieldCheck,
   UserRound,
-  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../auth/authContext';
+import { SalaryProfile } from '../../types/finance';
+import { ContractFields } from '../contracts/ContractFields';
+import { createContractFormState, parseContractForm } from '../contracts/contractForm';
 
-export interface OnboardingData {
-  monthlySalary: number;
-  currentBalance: number;
-  paymentDayOfMonth: number;
-  workDaysPerMonthTarget: number;
-}
+export type OnboardingData = Partial<SalaryProfile>;
 
 interface Props {
   userEmail: string;
@@ -26,10 +21,7 @@ interface Props {
 export const OnboardingScreen: React.FC<Props> = ({ userEmail, onComplete }) => {
   const { updateDisplayName, signOut } = useAuth();
   const [displayName, setDisplayName] = useState('');
-  const [monthlySalary, setMonthlySalary] = useState('');
-  const [currentBalance, setCurrentBalance] = useState('0');
-  const [paymentDayOfMonth, setPaymentDayOfMonth] = useState('28');
-  const [workDaysPerMonthTarget, setWorkDaysPerMonthTarget] = useState('22');
+  const [contract, setContract] = useState(() => createContractFormState({ currentBalance: 0 }));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,29 +30,14 @@ export const OnboardingScreen: React.FC<Props> = ({ userEmail, onComplete }) => 
     setError(null);
 
     const name = displayName.trim();
-    const salary = Number(monthlySalary);
-    const balance = currentBalance.trim() === '' ? 0 : Number(currentBalance);
-    const paymentDay = Number(paymentDayOfMonth);
-    const workDays = Number(workDaysPerMonthTarget);
-
     if (name.length < 2) {
       setError('Escribe tu nombre para personalizar tu cuenta.');
       return;
     }
-    if (!Number.isFinite(salary) || salary <= 0) {
-      setError('El salario mensual debe ser mayor que cero.');
-      return;
-    }
-    if (!Number.isFinite(balance) || balance < 0) {
-      setError('El balance actual no puede ser negativo.');
-      return;
-    }
-    if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 31) {
-      setError('El día de pago debe estar entre 1 y 31.');
-      return;
-    }
-    if (!Number.isInteger(workDays) || workDays < 1 || workDays > 31) {
-      setError('La meta de días laborables debe estar entre 1 y 31.');
+
+    const parsed = parseContractForm(contract);
+    if (parsed.error || !parsed.data) {
+      setError(parsed.error ?? 'Revisa los datos de tu contrato.');
       return;
     }
 
@@ -72,12 +49,7 @@ export const OnboardingScreen: React.FC<Props> = ({ userEmail, onComplete }) => 
         return;
       }
 
-      await onComplete({
-        monthlySalary: salary,
-        currentBalance: balance,
-        paymentDayOfMonth: paymentDay,
-        workDaysPerMonthTarget: workDays,
-      });
+      await onComplete(parsed.data);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'No se pudieron guardar tus datos.');
     } finally {
@@ -125,76 +97,12 @@ export const OnboardingScreen: React.FC<Props> = ({ userEmail, onComplete }) => 
             </div>
           </label>
 
-          <label className="auth-field">
-            <span>Salario mensual (COP)</span>
-            <div className="auth-input">
-              <Wallet size={15} />
-              <input
-                type="number"
-                inputMode="numeric"
-                min="1"
-                step="1"
-                placeholder="Ej. 2650000"
-                value={monthlySalary}
-                onChange={(event) => setMonthlySalary(event.target.value)}
-                disabled={isSubmitting}
-                required
-              />
-            </div>
-          </label>
-
-          <label className="auth-field">
-            <span>Balance actual en tu cuenta</span>
-            <div className="auth-input">
-              <Wallet size={15} />
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                placeholder="0"
-                value={currentBalance}
-                onChange={(event) => setCurrentBalance(event.target.value)}
-                disabled={isSubmitting}
-              />
-            </div>
-          </label>
-
-          <div className="onboarding-grid">
-            <label className="auth-field">
-              <span>Día de pago</span>
-              <div className="auth-input">
-                <CalendarDays size={15} />
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max="31"
-                  value={paymentDayOfMonth}
-                  onChange={(event) => setPaymentDayOfMonth(event.target.value)}
-                  disabled={isSubmitting}
-                  required
-                />
-              </div>
-            </label>
-
-            <label className="auth-field">
-              <span>Días laborables al mes</span>
-              <div className="auth-input">
-                <BriefcaseBusiness size={15} />
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max="31"
-                  value={workDaysPerMonthTarget}
-                  onChange={(event) => setWorkDaysPerMonthTarget(event.target.value)}
-                  disabled={isSubmitting}
-                  required
-                />
-              </div>
-            </label>
-          </div>
+          <ContractFields
+            values={contract}
+            onChange={(patch) => setContract((current) => ({ ...current, ...patch }))}
+            variant="auth"
+            disabled={isSubmitting}
+          />
 
           <div className="auth-alert info">
             <ShieldCheck size={15} />

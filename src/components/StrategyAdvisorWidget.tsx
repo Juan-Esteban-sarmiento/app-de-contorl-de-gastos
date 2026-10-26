@@ -13,6 +13,7 @@ import {
 import { StrategyReport } from '../services/strategyEngine';
 import { SalaryProfile, StrategyMethod } from '../types/finance';
 import { formatCOP } from '../utils/money';
+import { getMonthlyIncome } from '../utils/contract';
 
 interface Props {
   report: StrategyReport;
@@ -135,10 +136,10 @@ export const StrategyAdvisorWidget: React.FC<Props> = ({
               El día que cobras
             </h2>
           </div>
-          <span className="vt-card-meta">Nómina {money(salary.monthlySalary)}</span>
+          <span className="vt-card-meta">Nómina {money(getMonthlyIncome(salary))}</span>
         </div>
 
-        <div className="vt-plan-big">{money(salary.monthlySalary)}</div>
+        <div className="vt-plan-big">{money(getMonthlyIncome(salary))}</div>
         <p className="vt-plan-sub">Separa tu nómina en tres sobres antes de gastar.</p>
 
         <div className="vt-plan-grid">

@@ -1,13 +1,16 @@
 import { supabase } from '../lib/supabase';
 import {
+  ContractType,
   DebtCategory,
   DebtRecord,
   ExpenseCategory,
   ExpenseRecord,
+  PayMode,
   SalaryProfile,
   StrategyMethod,
   WorkDayRecord,
   WorkDayType,
+  WorkShift,
 } from '../types/finance';
 
 export interface FinanceSnapshot {
@@ -19,6 +22,14 @@ export interface FinanceSnapshot {
 }
 
 interface SettingsRow {
+  contract_type: ContractType;
+  pay_mode: PayMode;
+  daily_rate: number;
+  hourly_rate: number;
+  work_days_per_week: number;
+  payment_weekday: number;
+  default_shift: WorkShift;
+  hours_per_shift: number;
   monthly_salary: number;
   payment_period: SalaryProfile['paymentPeriod'];
   payment_day_of_month: number;
@@ -55,6 +66,7 @@ interface DebtRow {
 interface WorkDayRow {
   date: string;
   type: WorkDayType;
+  shift: WorkShift | null;
   hours_worked: number | null;
   daily_earnings: number | null;
   notes: string | null;
@@ -71,6 +83,9 @@ function friendlyDatabaseError(message: string, code?: string): Error {
   if (code === '42P01' || message.includes('does not exist')) {
     return new Error('Faltan las tablas de FinSmart. Ejecuta supabase/schema.sql en el SQL Editor de Supabase.');
   }
+  if (code === '42703' || code === 'PGRST204' || message.includes('contract_type') || message.includes('daily_rate') || message.includes('shift')) {
+    return new Error('Faltan las columnas de contrato y jornada. Vuelve a ejecutar supabase/schema.sql completo.');
+  }
   if (code === '42883' || code === 'PGRST202' || message.includes('save_finance_state')) {
     return new Error('Falta la función save_finance_state. Vuelve a ejecutar supabase/schema.sql completo.');
   }
@@ -86,7 +101,7 @@ export async function loadFinanceState(userId: string): Promise<FinanceSnapshot 
   const [settingsResult, expensesResult, debtsResult, workDaysResult] = await Promise.all([
     client
       .from('finance_settings')
-      .select('monthly_salary,payment_period,payment_day_of_month,work_days_per_month_target,current_balance,currency,strategy_mode')
+      .select('contract_type,pay_mode,daily_rate,hourly_rate,work_days_per_week,payment_weekday,default_shift,hours_per_shift,monthly_salary,payment_period,payment_day_of_month,work_days_per_month_target,current_balance,currency,strategy_mode')
       .eq('user_id', userId)
       .maybeSingle<SettingsRow>(),
     client
@@ -101,7 +116,7 @@ export async function loadFinanceState(userId: string): Promise<FinanceSnapshot 
       .order('due_date', { ascending: true }),
     client
       .from('work_days')
-      .select('date,type,hours_worked,daily_earnings,notes')
+      .select('date,type,shift,hours_worked,daily_earnings,notes')
       .eq('user_id', userId)
       .order('date', { ascending: true }),
   ]);
@@ -113,6 +128,14 @@ export async function loadFinanceState(userId: string): Promise<FinanceSnapshot 
   if (!settings) return null;
 
   const salary: SalaryProfile = {
+    contractType: settings.contract_type,
+    payMode: settings.pay_mode,
+    dailyRate: Number(settings.daily_rate),
+    hourlyRate: Number(settings.hourly_rate),
+    workDaysPerWeek: settings.work_days_per_week,
+    paymentWeekday: settings.payment_weekday,
+    defaultShift: settings.default_shift,
+    hoursPerShift: Number(settings.hours_per_shift),
     monthlySalary: Number(settings.monthly_salary),
     paymentPeriod: settings.payment_period,
     paymentDayOfMonth: settings.payment_day_of_month,
@@ -148,6 +171,7 @@ export async function loadFinanceState(userId: string): Promise<FinanceSnapshot 
   const workDays: WorkDayRecord[] = ((workDaysResult.data ?? []) as WorkDayRow[]).map((row) => ({
     date: row.date,
     type: row.type,
+    shift: row.shift ?? undefined,
     hoursWorked: row.hours_worked === null ? undefined : Number(row.hours_worked),
     dailyEarnings: row.daily_earnings === null ? undefined : Number(row.daily_earnings),
     notes: row.notes ?? undefined,
@@ -167,6 +191,14 @@ export async function saveFinanceState(snapshot: FinanceSnapshot): Promise<void>
 
   const { error } = await client.rpc('save_finance_state', {
     p_salary: {
+      contract_type: snapshot.salary.contractType,
+      pay_mode: snapshot.salary.payMode,
+      daily_rate: snapshot.salary.dailyRate,
+      hourly_rate: snapshot.salary.hourlyRate,
+      work_days_per_week: snapshot.salary.workDaysPerWeek,
+      payment_weekday: snapshot.salary.paymentWeekday,
+      default_shift: snapshot.salary.defaultShift,
+      hours_per_shift: snapshot.salary.hoursPerShift,
       monthly_salary: snapshot.salary.monthlySalary,
       payment_period: snapshot.salary.paymentPeriod,
       payment_day_of_month: snapshot.salary.paymentDayOfMonth,
@@ -200,6 +232,7 @@ export async function saveFinanceState(snapshot: FinanceSnapshot): Promise<void>
     p_work_days: snapshot.workDays.map((workDay) => ({
       date: workDay.date,
       type: workDay.type,
+      shift: workDay.shift ?? snapshot.salary.defaultShift,
       hours_worked: workDay.hoursWorked ?? null,
       daily_earnings: workDay.dailyEarnings ?? null,
       notes: workDay.notes ?? null,

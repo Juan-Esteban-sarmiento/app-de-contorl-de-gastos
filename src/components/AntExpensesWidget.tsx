@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { SalaryProfile } from '../types/finance';
 import { formatCOP } from '../utils/money';
+import { getMonthlyIncome } from '../utils/contract';
 
 interface AntExpenseSummary {
   totalMonth: number;
@@ -68,7 +69,7 @@ export const AntExpensesWidget: React.FC<Props> = ({
         <div className="vt-metric danger">
           <span><TrendingDown size={12} /> Pérdida anual</span>
           <strong>-{money(antSummary.projectedYearlyLoss, 0)}</strong>
-          <small>{(antSummary.projectedYearlyLoss / (salary.monthlySalary || 1)).toFixed(1)} meses de trabajo</small>
+          <small>{(antSummary.projectedYearlyLoss / (getMonthlyIncome(salary) || 1)).toFixed(1)} meses de trabajo</small>
         </div>
 
         <div className="vt-metric positive">

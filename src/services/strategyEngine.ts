@@ -1,5 +1,6 @@
 import { ActionAdvice, DebtRecord, ExpenseRecord, FinancialHealthScore, SalaryProfile, StrategyMethod } from '../types/finance';
 import { formatCOP } from '../utils/money';
+import { getMonthlyIncome } from '../utils/contract';
 import { daysUntil, getToday, parseLocalDate, startOfDay } from '../utils/date';
 
 export interface StrategyReport {
@@ -56,7 +57,7 @@ export const strategyEngine = {
     const estimatedInterestSaved = totalDebt > 0 ? Math.round(totalDebt * 0.12) : 0;
 
     // Distribución de Paga 50/30/20
-    const monthlyPay = salary.monthlySalary || 1;
+    const monthlyPay = getMonthlyIncome(salary) || 1;
     const needsAmount = monthlyPay * 0.50;
     const wantsAmount = monthlyPay * 0.30;
     const savingsAndExtraDebtAmount = monthlyPay * 0.20;

@@ -16,6 +16,7 @@ import {
 import { DebtRecord, ExpenseRecord, SalaryProfile } from '../types/finance';
 import { StrategyReport } from '../services/strategyEngine';
 import { formatCOP } from '../utils/money';
+import { getMonthlyIncome } from '../utils/contract';
 import { daysUntil, getToday, parseLocalDate } from '../utils/date';
 
 interface Props {
@@ -140,7 +141,7 @@ export const HeroBalanceCard: React.FC<Props> = ({
           <div className="vt-hero-foot">
             <div>
               <span>Nómina</span>
-              <strong>{money(salary.monthlySalary)}</strong>
+              <strong>{money(getMonthlyIncome(salary))}</strong>
             </div>
             <div>
               <span>Gastos</span>

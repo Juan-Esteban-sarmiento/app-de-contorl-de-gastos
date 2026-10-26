@@ -346,8 +346,8 @@ const SettingsForm: React.FC<Omit<Props, 'isOpen'>> = ({
           <div className="settings-section-head">
             <span className="settings-icon"><LockKeyhole size={16} /></span>
             <div>
-              <h4>Salario y jornada</h4>
-              <p>Edita tu nómina, balance, día de pago y días laborables.</p>
+              <h4>Contrato y jornada</h4>
+              <p>Edita tu contrato, tarifa, turno, horas y día de pago.</p>
             </div>
           </div>
           <button type="button" className="vt-btn vt-btn-sm" onClick={onOpenSalary}>
