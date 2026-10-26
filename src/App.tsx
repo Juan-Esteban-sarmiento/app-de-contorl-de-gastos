@@ -30,12 +30,18 @@ const AuthGate: React.FC = () => {
   if (passwordRecovery) return <UpdatePasswordScreen />;
   if (!session) return <AuthScreen />;
 
+  const metadataName = session.user.user_metadata?.full_name;
+  const displayName = typeof metadataName === 'string' && metadataName.trim()
+    ? metadataName.trim()
+    : session.user.email?.split('@')[0] ?? 'Mi cuenta';
+
   return (
     <Suspense fallback={<LoadingScreen />}>
       <FinanceApp
         key={session.user.id}
         userId={session.user.id}
         userEmail={session.user.email ?? 'Mi cuenta'}
+        displayName={displayName}
         onSignOut={signOut}
       />
     </Suspense>

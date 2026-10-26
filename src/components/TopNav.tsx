@@ -9,7 +9,6 @@ import {
   LogOut,
   Moon,
   Receipt,
-  RotateCcw,
   Settings2,
   Sparkles,
   Sun,
@@ -24,9 +23,9 @@ interface Props {
   antExpenseCount: number;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
-  onOpenSalaryModal: () => void;
-  onResetData: () => void;
+  onOpenSettings: () => void;
   userEmail: string;
+  displayName: string;
   syncStatus: CloudSyncStatus;
   onSignOut: () => Promise<void>;
 }
@@ -47,15 +46,14 @@ export const TopNav: React.FC<Props> = ({
   antExpenseCount,
   isDarkMode,
   onToggleDarkMode,
-  onOpenSalaryModal,
-  onResetData,
+  onOpenSettings,
   userEmail,
+  displayName,
   syncStatus,
   onSignOut,
 }) => {
-  const initials = userEmail
-    .split('@')[0]
-    .split(/[._-]/)
+  const initials = (displayName.trim() || userEmail.split('@')[0])
+    .split(/[\s._-]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
@@ -128,21 +126,11 @@ export const TopNav: React.FC<Props> = ({
           <button
             type="button"
             className="vt-icon-btn"
-            onClick={onOpenSalaryModal}
-            aria-label="Configurar salario y jornada"
-            title="Salario y jornada"
+            onClick={onOpenSettings}
+            aria-label="Abrir ajustes de cuenta"
+            title="Ajustes de cuenta"
           >
             <Settings2 size={16} />
-          </button>
-
-          <button
-            type="button"
-            className="vt-icon-btn vt-icon-btn-muted"
-            onClick={onResetData}
-            aria-label="Restaurar datos de demostración"
-            title="Restaurar demo"
-          >
-            <RotateCcw size={15} />
           </button>
 
           <button
@@ -155,7 +143,15 @@ export const TopNav: React.FC<Props> = ({
             <LogOut size={15} />
           </button>
 
-          <span className="vt-avatar" title={userEmail}>{initials}</span>
+          <button
+            type="button"
+            className="vt-avatar"
+            onClick={onOpenSettings}
+            aria-label="Abrir ajustes de cuenta"
+            title={`${displayName} · ${userEmail}`}
+          >
+            {initials}
+          </button>
         </div>
       </div>
     </header>

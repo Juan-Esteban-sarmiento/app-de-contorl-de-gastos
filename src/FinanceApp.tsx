@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { CheckCircle2, CloudOff, Loader2 } from 'lucide-react';
 import { CloudSyncStatus, CurrencyCode, DebtRecord, ExpenseRecord, SalaryProfile, StrategyMethod, WorkDayRecord, WorkDayType } from './types/finance';
@@ -21,8 +21,28 @@ import { DebtListView } from './components/DebtListView';
 import { AddExpenseModal } from './components/modals/AddExpenseModal';
 import { AddDebtModal } from './components/modals/AddDebtModal';
 import { SalaryConfigModal } from './components/modals/SalaryConfigModal';
+import { UserSettingsModal } from './components/modals/UserSettingsModal';
+import { OnboardingScreen, type OnboardingData } from './components/onboarding/OnboardingScreen';
 import { AiAssistantView } from './components/AiAssistantView';
 import { AiChatDock } from './components/AiChatDock';
+
+const LEGACY_SEED_DEBT_IDS = new Set(['debt-1', 'debt-2', 'debt-3', 'debt-4']);
+const LEGACY_SEED_EXPENSE_IDS = new Set([
+  'exp-1', 'exp-2', 'exp-3', 'exp-4', 'exp-5', 'exp-6', 'exp-7', 'exp-8', 'exp-9',
+]);
+
+function isLegacySeedState(snapshot: FinanceSnapshot): boolean {
+  return snapshot.salary.monthlySalary === 2650000
+    && snapshot.salary.currentBalance === 4850400
+    && snapshot.salary.paymentDayOfMonth === 28
+    && snapshot.salary.workDaysPerMonthTarget === 22
+    && snapshot.salary.paymentPeriod === 'mensual'
+    && snapshot.strategyMode === 'avalancha'
+    && snapshot.debts.length === 4
+    && snapshot.debts.every((debt) => LEGACY_SEED_DEBT_IDS.has(debt.id))
+    && snapshot.expenses.length === 9
+    && snapshot.expenses.every((expense) => LEGACY_SEED_EXPENSE_IDS.has(expense.id));
+}
 
 const PAGE_META: Record<TabType, { kicker: string; title: string; subtitle: string }> = {
   dashboard: {
@@ -60,10 +80,11 @@ const PAGE_META: Record<TabType, { kicker: string; title: string; subtitle: stri
 interface FinanceAppProps {
   userId: string;
   userEmail: string;
+  displayName: string;
   onSignOut: () => Promise<void>;
 }
 
-const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut }) => {
+const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, displayName, onSignOut }) => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('finsmart_theme_mode') !== 'light';
   });
@@ -83,17 +104,10 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [today] = useState(() => startOfDay(getToday()));
   const [hydrated, setHydrated] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('loading');
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [hydrationAttempt, setHydrationAttempt] = useState(0);
-
-  const initialSnapshot = useRef<FinanceSnapshot>({
-    salary,
-    debts,
-    expenses,
-    workDays,
-    strategyMode,
-  });
 
   const changeTab = (tab: TabType) => {
     setActiveTab(tab);
@@ -103,6 +117,7 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [prefilledDateForExpense, setPrefilledDateForExpense] = useState<string | undefined>(undefined);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -126,18 +141,25 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
         const cloudState = await loadFinanceState(userId);
         if (cancelled) return;
 
-        if (cloudState) {
+        if (cloudState && cloudState.salary.monthlySalary > 0 && !isLegacySeedState(cloudState)) {
           setSalary(cloudState.salary);
           setDebts(cloudState.debts);
           setExpenses(cloudState.expenses);
           setWorkDays(cloudState.workDays);
           setStrategyMode(cloudState.strategyMode);
-        } else {
-          await saveFinanceState(initialSnapshot.current);
+          setOnboarding(false);
+          setHydrated(true);
+          setCloudStatus('synced');
+          return;
         }
 
-        if (cancelled) return;
-        setHydrated(true);
+        storageService.clearUserData();
+        setSalary(storageService.getSalaryProfile());
+        setDebts([]);
+        setExpenses([]);
+        setWorkDays([]);
+        setStrategyMode('avalancha');
+        setOnboarding(true);
         setCloudStatus('synced');
       } catch (error) {
         if (cancelled) return;
@@ -360,16 +382,34 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
     showToast('Perfil salarial actualizado.');
   };
 
-  const handleResetData = () => {
-    if (window.confirm('¿Restaurar los datos de demostración?')) {
-      storageService.resetToDefaults();
-      setSalary(storageService.getSalaryProfile());
-      setDebts(storageService.getDebts());
-      setExpenses(storageService.getExpenses());
-      setWorkDays(storageService.getWorkDays());
-      setStrategyMode('avalancha');
-      showToast('Datos de demostración restaurados.');
-    }
+  const handleOnboardingComplete = async (data: OnboardingData) => {
+    const nextSalary: SalaryProfile = {
+      monthlySalary: data.monthlySalary,
+      paymentPeriod: 'mensual',
+      paymentDayOfMonth: data.paymentDayOfMonth,
+      workDaysPerMonthTarget: data.workDaysPerMonthTarget,
+      currentBalance: data.currentBalance,
+      currency: 'COP',
+    };
+    const nextSnapshot: FinanceSnapshot = {
+      salary: nextSalary,
+      debts: [],
+      expenses: [],
+      workDays: [],
+      strategyMode: 'avalancha',
+    };
+
+    await saveFinanceState(nextSnapshot);
+    setSalary(nextSalary);
+    setDebts([]);
+    setExpenses([]);
+    setWorkDays([]);
+    setStrategyMode('avalancha');
+    setOnboarding(false);
+    setHydrated(true);
+    setCloudStatus('synced');
+    setCloudError(null);
+    showToast('Datos iniciales guardados. Bienvenido a FinSmart.');
   };
 
   const handleOpenAddExpenseForDate = (dateStr: string) => {
@@ -444,6 +484,10 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
     setCurrency: (c: CurrencyCode) => setSalary(prev => ({ ...prev, currency: c })),
   };
 
+  if (onboarding) {
+    return <OnboardingScreen userEmail={userEmail} onComplete={handleOnboardingComplete} />;
+  }
+
   if (!hydrated) {
     return (
       <div className="auth-loading">
@@ -502,9 +546,9 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
         antExpenseCount={antExpenseCount}
         isDarkMode={isDarkMode}
         onToggleDarkMode={toggleDarkMode}
-        onOpenSalaryModal={() => setIsSalaryModalOpen(true)}
-        onResetData={handleResetData}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
         userEmail={userEmail}
+        displayName={displayName}
         syncStatus={cloudStatus}
         onSignOut={onSignOut}
       />
@@ -649,6 +693,17 @@ const FinanceApp: React.FC<FinanceAppProps> = ({ userId, userEmail, onSignOut })
         salary={salary}
         onClose={() => setIsSalaryModalOpen(false)}
         onSave={handleSaveSalary}
+      />
+
+      <UserSettingsModal
+        isOpen={isSettingsModalOpen}
+        userEmail={userEmail}
+        displayName={displayName}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onOpenSalary={() => {
+          setIsSettingsModalOpen(false);
+          setIsSalaryModalOpen(true);
+        }}
       />
 
       <AiChatDock

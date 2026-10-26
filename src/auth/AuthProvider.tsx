@@ -130,6 +130,78 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { error: null, message: 'Contraseña actualizada.' };
   };
 
+  const verifyCurrentPassword = async (password: string): Promise<string | null> => {
+    const email = session?.user.email;
+    if (!supabase || !email) return 'No hay una sesión activa.';
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    return error ? 'La contraseña actual no es correcta.' : null;
+  };
+
+  const updateDisplayName = async (displayName: string): Promise<AuthActionResult> => {
+    if (!supabase) return { error: 'Supabase no está configurado.' };
+
+    const trimmed = displayName.trim();
+    if (trimmed.length < 2) return { error: 'El nombre debe tener al menos 2 caracteres.' };
+    if (trimmed.length > 80) return { error: 'El nombre no puede superar los 80 caracteres.' };
+
+    const { error } = await supabase.auth.updateUser({ data: { full_name: trimmed } });
+    if (error) return { error: translateAuthError(error.message) };
+
+    return { error: null, message: 'Nombre actualizado.' };
+  };
+
+  const changeEmail = async (email: string, currentPassword: string): Promise<AuthActionResult> => {
+    if (!supabase) return { error: 'Supabase no está configurado.' };
+
+    const currentEmail = session?.user.email;
+    if (!currentEmail) return { error: 'No hay una sesión activa.' };
+
+    const trimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return { error: 'Escribe un correo electrónico válido.' };
+    }
+    if (trimmed.toLowerCase() === currentEmail.toLowerCase()) {
+      return { error: 'El correo nuevo debe ser diferente al actual.' };
+    }
+
+    const passwordError = await verifyCurrentPassword(currentPassword);
+    if (passwordError) return { error: passwordError };
+
+    const { error } = await supabase.auth.updateUser(
+      { email: trimmed },
+      { emailRedirectTo: authRedirectUrl() }
+    );
+    if (error) return { error: translateAuthError(error.message) };
+
+    return {
+      error: null,
+      message: 'Te enviamos un correo de confirmación. El cambio se aplicará cuando lo confirmes.',
+    };
+  };
+
+  const changePassword = async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<AuthActionResult> => {
+    if (!supabase) return { error: 'Supabase no está configurado.' };
+    if (newPassword.length < 6) {
+      return { error: 'La contraseña nueva debe tener al menos 6 caracteres.' };
+    }
+
+    const passwordError = await verifyCurrentPassword(currentPassword);
+    if (passwordError) return { error: passwordError };
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: translateAuthError(error.message) };
+
+    return { error: null, message: 'Contraseña actualizada. Úsala en tu próximo inicio de sesión.' };
+  };
+
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
@@ -140,6 +212,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     signOut,
     requestPasswordReset,
     updatePassword,
+    updateDisplayName,
+    changeEmail,
+    changePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
